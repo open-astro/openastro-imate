@@ -2,23 +2,15 @@
 
 <img src="https://www.openastro.net/wp-content/uploads/2026/04/OpenAstro_logo.png" alt="OpenAstro logo" width="420">
 
-A modern, reliable OS for the **iOptron iMate** (OrangePi 3 LTS / Allwinner H6): an
-[Armbian](https://www.armbian.com/)-based **Debian 13 (Trixie)** image with a
-**mainline kernel**, the iMate's WiFi access point, full GPIO/power-port support,
-and everything ready for [AlpacaBridge](https://github.com/open-astro/AlpacaBridge).
+OpenAstro OS for the **iOptron iMate** (OrangePi 3 LTS / Allwinner H6): an
+[Armbian](https://www.armbian.com/)-based **Debian 13 (Trixie)** image on a
+mainline kernel — with the iMate's WiFi access point, full GPIO/power-port
+support, and everything ready for
+[AlpacaBridge](https://github.com/open-astro/AlpacaBridge).
 
-You flash one image to a microSD, boot the iMate once, and it **installs itself to
-the internal eMMC** — then you pull the SD and it runs from internal storage. No
-SSH, no scripts, no configuration.
-
-## Why a mainline kernel (not the stock BSP)
-
-The stock iMate runs an old (2022) Allwinner BSP kernel that **crashes** under load:
-its `cpufreq_dt` driver oopses when the WiFi/BT chip powers on, wedging the CPU
-governor so the box hangs (AlpacaBridge can't even bind its port). Armbian's
-mainline-based kernel fixes that and is actively maintained — and it **already ships
-the Unisoc UWE5622 WiFi/BT driver**, so you get working DVFS (full CPU speed), USB3,
-WiFi, and Bluetooth with security updates, on hardware iOptron froze years ago.
+You flash one image to a microSD, boot the iMate once, and it **installs itself
+to the internal eMMC** — then you pull the SD and it runs from internal storage.
+No SSH, no scripts, no configuration.
 
 ## Supported hardware
 
@@ -127,9 +119,8 @@ sudo build/build-openastro-image.sh armbian.img.xz images/openastro-imate.img.xz
 
 ## Hardware documentation
 
-See [`hardware/imate-h6/`](hardware/imate-h6/) — [`inventory.md`](hardware/imate-h6/inventory.md)
-(GPIO map, WiFi/BT chipset, partition layout) and
-[`fix-apt-trixie-repos.md`](hardware/imate-h6/fix-apt-trixie-repos.md).
+See [`hardware/imate-h6/inventory.md`](hardware/imate-h6/inventory.md) — GPIO map,
+WiFi/BT chipset, and partition layout.
 
 ## License
 
