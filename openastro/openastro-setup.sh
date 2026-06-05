@@ -2,8 +2,11 @@
 # OpenAstro layer for the iOptron iMate (OrangePi 3 LTS / Allwinner H6).
 #
 # This turns a stock Armbian "Orange Pi 3 LTS" image (Debian 13 Trixie, mainline
-# kernel) into an OpenAstro astronomy controller: AlpacaBridge on :6800, the
-# iMate PowerBox switch, and the stock-style WiFi access point.
+# kernel) into the OpenAstro OS for the iMate: the stock-style WiFi access point,
+# libgpiod v2 + GPIO plumbing for the iMate PowerBox, dark-for-imaging LEDs, and
+# a self-install-to-eMMC flow. AlpacaBridge is NOT included here — users install
+# it from the OpenAstro apt repository (apt install alpacabridge), same as the
+# other platforms.
 #
 # Why Armbian instead of the old stock-BSP overlay: the stock 5.16 Allwinner BSP
 # kernel OOPSes in cpufreq_dt when the WCN/WiFi chip powers on, wedging the box.
@@ -173,79 +176,23 @@ systemctl disable armbian-firstlogin.service 2>/dev/null || true
 rm -f /root/.not_logged_in_yet 2>/dev/null || true
 
 # ============================================================
-# AlpacaBridge (server + pre-seeded iMate PowerBox)
+# GPIO enablement for the iMate PowerBox (libgpiod v2)
 # ============================================================
-# AB_PAYLOAD is a directory containing: alpacabridge (the server binary),
-# optional lib/*.so* (vendor camera SDKs for the full build), and default.yaml.
-log "Installing AlpacaBridge..."
-AB_PAYLOAD="${OPENASTRO_AB_PAYLOAD:-/tmp/alpacabridge}"
-[ -x "$AB_PAYLOAD/alpacabridge" ] || { echo "ERROR: AlpacaBridge payload not found at $AB_PAYLOAD/alpacabridge"; exit 1; }
-getent group alpacabridge >/dev/null || groupadd --system alpacabridge
-getent passwd alpacabridge >/dev/null || useradd --system -g alpacabridge -s /usr/sbin/nologin -d /etc/alpacabridge alpacabridge
-install -d /usr/lib/alpacabridge /etc/alpacabridge/config /var/log/AlpacaBridge
-install -m 0755 "$AB_PAYLOAD/alpacabridge" /usr/bin/alpacabridge
-cp -a "$AB_PAYLOAD"/lib/*.so* /usr/lib/alpacabridge/ 2>/dev/null || true   # vendor SDKs (full build); ok if absent
-[ -f "$AB_PAYLOAD/default.yaml" ] && install -m 0644 "$AB_PAYLOAD/default.yaml" /etc/alpacabridge/config/default.yaml
-
-# Let the unprivileged alpacabridge user drive the PowerBox GPIO.
+# AlpacaBridge is NOT baked into the image. Like the other OpenAstro platforms,
+# users install it from the OpenAstro apt repository (apt install alpacabridge).
+# The image only provides the hardware plumbing so the PowerBox works the moment
+# AB is installed: libgpiod v2 (libgpiod3 + the gpiod CLI, installed above), a
+# gpio group, and a udev rule making the gpiochip char devices group-accessible.
+#
+# iMate PowerBox is on ${POWERBOX_GPIOCHIP} (mainline H6 main bank): DC1=line 118
+# (PD22), DC2=line 114 (PD18); DC3 is an always-on passthrough. AlpacaBridge's
+# iMate PowerBox driver talks to gpiochip1 via libgpiod — its service user must
+# be a member of the gpio group (the alpacabridge .deb handles that on install).
+log "Enabling GPIO access (libgpiod v2) for the PowerBox..."
 getent group gpio >/dev/null || groupadd --system gpio
-usermod -aG gpio alpacabridge
 cat > /etc/udev/rules.d/99-openastro-gpio.rules <<EOF
 KERNEL=="gpiochip[0-9]*", GROUP="gpio", MODE="0660"
 EOF
-
-# Pre-seed the iMate PowerBox (mainline gpiochip1) so it auto-registers at boot.
-cat > /etc/alpacabridge/config/registered_devices.json <<EOF
-[
-  {"vendor":"ioptron","deviceType":"switch","deviceNumber":0,"gpioChip":"${POWERBOX_GPIOCHIP}"}
-]
-EOF
-chown -R alpacabridge:alpacabridge /etc/alpacabridge /var/log/AlpacaBridge
-
-cat > /etc/systemd/system/alpacabridge.service <<EOF
-[Unit]
-Description=AlpacaBridge ASCOM Alpaca Server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=alpacabridge
-Group=alpacabridge
-SupplementaryGroups=gpio
-WorkingDirectory=/etc/alpacabridge
-ExecStart=/usr/bin/alpacabridge /etc/alpacabridge/config/default.yaml
-Environment=LD_LIBRARY_PATH=/usr/lib/alpacabridge
-Restart=on-failure
-RestartSec=3
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl enable alpacabridge.service >/dev/null 2>&1
-
-# Power on the DC ports at boot by connecting the PowerBox once AB is up.
-cat > /usr/local/sbin/openastro-powerbox-on.sh <<'EOF'
-#!/bin/bash
-for _ in $(seq 1 30); do curl -s -m3 http://127.0.0.1:6800/management/apiversions >/dev/null 2>&1 && break; sleep 1; done
-curl -s -m5 -X PUT "http://127.0.0.1:6800/api/v1/switch/0/connected" -d 'Connected=true&ClientID=1&ClientTransactionID=1' >/dev/null 2>&1 || true
-EOF
-chmod +x /usr/local/sbin/openastro-powerbox-on.sh
-cat > /etc/systemd/system/openastro-powerbox-on.service <<EOF
-[Unit]
-Description=OpenAstro: power on iMate DC ports (connect PowerBox)
-After=alpacabridge.service
-Wants=alpacabridge.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/local/sbin/openastro-powerbox-on.sh
-
-[Install]
-WantedBy=multi-user.target
-EOF
-systemctl enable openastro-powerbox-on.service >/dev/null 2>&1
 
 # ============================================================
 # Dark for imaging — turn off the board LEDs
@@ -308,4 +255,4 @@ WantedBy=multi-user.target
 EOF
 systemctl enable openastro-emmc-install.service >/dev/null 2>&1
 
-log "OpenAstro layer complete (AP + AlpacaBridge + PowerBox + eMMC auto-installer)."
+log "OpenAstro OS layer complete (WiFi AP + libgpiod/GPIO + LEDs + eMMC auto-installer). Install AlpacaBridge with: apt install alpacabridge"

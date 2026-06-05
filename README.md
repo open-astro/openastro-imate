@@ -1,183 +1,135 @@
-# OpenAstro Linux — Debian 13 Trixie for the iOptron iMate
+# OpenAstro for the iOptron iMate
 
 <img src="https://www.openastro.net/wp-content/uploads/2026/04/OpenAstro_logo.png" alt="OpenAstro logo" width="420">
 
-Replace the stock OS on your iOptron iMate with **Debian 13 (Trixie)** while keeping full hardware support — WiFi, ethernet, DC power ports, GPIO, and USB. Restore to stock at any time using iOptron's SD card recovery image.
+A modern, reliable OS for the **iOptron iMate** (OrangePi 3 LTS / Allwinner H6): an
+[Armbian](https://www.armbian.com/)-based **Debian 13 (Trixie)** image with a
+**mainline kernel**, the iMate's WiFi access point, full GPIO/power-port support,
+and everything ready for [AlpacaBridge](https://github.com/open-astro/AlpacaBridge).
 
-## Supported Hardware
+You flash one image to a microSD, boot the iMate once, and it **installs itself to
+the internal eMMC** — then you pull the SD and it runs from internal storage. No
+SSH, no scripts, no configuration.
+
+## Why a mainline kernel (not the stock BSP)
+
+The stock iMate runs an old (2022) Allwinner BSP kernel that **crashes** under load:
+its `cpufreq_dt` driver oopses when the WiFi/BT chip powers on, wedging the CPU
+governor so the box hangs (AlpacaBridge can't even bind its port). Armbian's
+mainline-based kernel fixes that and is actively maintained — and it **already ships
+the Unisoc UWE5622 WiFi/BT driver**, so you get working DVFS (full CPU speed), USB3,
+WiFi, and Bluetooth with security updates, on hardware iOptron froze years ago.
+
+## Supported hardware
 
 | Device | SoC | Storage | Status |
 |--------|-----|---------|--------|
-| iOptron iMate | Allwinner H6 (OrangePi 3 LTS) | 29 GB eMMC | Fully supported |
-
-## How It Works
-
-OpenAstro Linux uses the **stock iMate bootloader and kernel** — only the root filesystem contents are replaced with Debian Trixie over SSH. This means:
-
-- Stock boot chain is untouched (U-Boot, kernel, device tree)
-- All hardware works out of the box (same drivers as stock)
-- Restore to stock firmware at any time using iOptron's SD card recovery image
-- No repartitioning — stock single-partition layout is preserved
-- No physical access required — everything happens over the network
+| iOptron iMate | Allwinner H6 (OrangePi 3 LTS) | 29 GB eMMC | Supported |
 
 ## Install
 
-### 1. Setup and run installer
+### 1. Download + flash
+
+Grab the latest `openastro-imate.img.xz` from the [Releases](../../releases) page and
+flash it to a microSD card (8 GB+) with [Raspberry Pi Imager](https://www.raspberrypi.com/software/),
+[balenaEtcher](https://etcher.balena.io/), or `dd`:
 
 ```bash
-sudo apt install sshpass wget pv
-git clone https://github.com/open-astro/aw-flashtool.git
-cd aw-flashtool
-./scripts/install
+xzcat openastro-imate.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
-The installer handles everything automatically:
+### 2. Boot once from the SD — it installs itself to the eMMC
 
-1. **Connects** to your iMate via SSH using the stock credentials
-2. **Preserves** the stock kernel, modules, firmware, and hardware tools
-3. **Downloads** the OpenAstro Linux image from GitHub Releases (or uses a local copy)
-4. **Replaces** the root filesystem with Debian Trixie
-5. **Reboots** into OpenAstro Linux
+Insert the SD, power on the iMate, and **watch the status LED**:
 
-### 2. First Boot
+| LED | Meaning |
+|-----|---------|
+| 🔴 **Red blinking** | Installing to internal storage — **do not remove the SD** |
+| 🟢 **Solid green** | Done — power off and remove the SD card |
+| 🔴 **Solid red** | Normal operation (powered on) |
 
-The iMate reboots automatically after installation. Wait about 60 seconds.
+### 3. Remove the SD — done
 
-```
-ssh astro@<imate-ip>
-```
+When the LED is **solid green**, power off, **remove the microSD**, and power back on.
+The iMate now boots OpenAstro from its internal eMMC. The SD card is no longer needed.
+
+## First boot defaults
 
 | Setting | Value |
 |---------|-------|
-| Hostname | `astro` |
-| User | `astro` |
-| Password | `astro` |
-| SSH | Enabled |
-| WiFi | Stock iOptron AP (SSID `iMate_…`, password `12345678`) |
-| DC Ports | Enabled at boot |
+| Hostname | `openastro` |
+| Login | `astro` / `astro` — **change immediately:** `passwd` |
+| WiFi AP | `iMate_<MAC>` (5 GHz), password `12345678` |
+| AP address | `172.24.1.1` (DHCP for clients) |
+| Ethernet | DHCP |
+| Status LED | Solid red = on |
 
-**Change the default password immediately:** `passwd`
+Reach it over ethernet (`ssh astro@<ip>`) or by joining the `iMate_…` WiFi.
 
-### WiFi
+### Connect to your own network instead (optional)
 
-The iMate keeps broadcasting its stock iOptron WiFi access point after install — no configuration needed.
-
-| Setting | Value |
-|---------|-------|
-| SSID | `iMate_…` (stock iOptron AP) |
-| Password | `12345678` |
-
-If you'd rather connect the iMate to an existing network (station mode):
+NetworkManager manages the wired port; to also join an existing WiFi network:
 
 ```bash
 nmcli dev wifi list
-nmcli dev wifi connect <SSID> password <pass>
+nmcli dev wifi connect "<SSID>" password "<pass>"
 ```
 
-Or create your own hotspot with custom credentials:
+## Install AlpacaBridge
+
+AlpacaBridge is **not** baked into the image — install it from the OpenAstro apt
+repository, the same as on every other platform (see the
+[AlpacaBridge install guide](https://github.com/open-astro/AlpacaBridge)):
 
 ```bash
-nmcli device wifi hotspot ssid astro password <pass>
+sudo apt install alpacabridge
 ```
 
-### DC Power Ports
+`libgpiod` (v2) is already in the image, so the **iMate PowerBox** works as soon as
+AlpacaBridge is installed — add it in the AlpacaBridge web UI as a **Switch → iOptron
+→ iMate PowerBox** (it drives the DC ports over `/dev/gpiochip1`).
 
-| Port | Command On | Command Off |
-|------|-----------|-------------|
-| DC1 | `gpio write 2 1` | `gpio write 2 0` |
-| DC2 | `gpio write 6 1` | `gpio write 6 0` |
-| DC3 | Always on (passthrough) | — |
+### DC power ports
 
-Both DC1 and DC2 are enabled automatically at boot via `dc-power-ports.service`.
+| Port | Control |
+|------|---------|
+| DC1, DC2 | Switchable via the AlpacaBridge **iMate PowerBox** Switch device |
+| DC3 | Always on (hardwired pass-through) |
 
-## Restore Stock Firmware
+## Restore stock iOptron firmware
 
-To go back to the original iOptron firmware, use iOptron's official SD card recovery image. Follow the instructions here:
+OpenAstro lives on the eMMC, so to go back to stock use iOptron's official SD card
+recovery image: [Restore/Update iMate IMG File](https://www.ioptron.com/Articles.asp?ID=366).
+After restoring, the stock login is `imate` / `imate` and the WiFi password is `12345678`.
 
-- [Restore/Update iMate IMG File](https://www.ioptron.com/Articles.asp?ID=366)
+## Build the image yourself
 
-After restoring, connect to the iMate WiFi (password: `12345678`) and log in with the stock credentials.
-
-| Setting | Value |
-|---------|-------|
-| User | `imate` |
-| Password | `imate` |
-
-## Build Your Own
-
-If you'd prefer to build a custom rootfs instead of using the pre-built image:
-
-### 1. Create a Debian Trixie rootfs
+The release image is built from a stock Armbian *Orange Pi 3 LTS* image plus the
+OpenAstro layer. On an **aarch64** host (another arm64 Debian/Armbian box, or the
+iMate itself — it's a native chroot, no emulation):
 
 ```bash
-sudo apt install debootstrap qemu-user-static
-sudo scripts/rootfs-setup.sh
+# 1. grab the upstream Armbian "Orange Pi 3 LTS" (Trixie, current kernel) image
+wget -O armbian.img.xz https://dl.armbian.com/orangepi3-lts/Trixie_current_minimal
+
+# 2. bake in the OpenAstro layer and repack
+sudo apt install parted e2fsprogs
+sudo build/build-openastro-image.sh armbian.img.xz images/openastro-imate.img.xz
 ```
 
-This runs debootstrap, configures users, networking, SSH, GPIO services, and packages the result into `images/astrolinux-trixie-h6.tar.gz`.
+- [`build/build-openastro-image.sh`](build/build-openastro-image.sh) — customizes the
+  Armbian image in a chroot and produces a compressed, flashable `.img.xz`.
+- [`openastro/openastro-setup.sh`](openastro/openastro-setup.sh) — the OpenAstro layer
+  (WiFi AP, libgpiod/GPIO, dark-for-imaging LEDs, eMMC auto-installer). Idempotent;
+  also runnable directly on a booted Armbian board.
+- [`openastro/openastro-emmc-install.sh`](openastro/openastro-emmc-install.sh) — the
+  first-boot SD→eMMC self-installer.
 
-### 2. Flash
+## Hardware documentation
 
-```bash
-./scripts/install
-```
-
-The installer will detect the local image in `images/` and use it instead of downloading.
-
-### Shrink a stock DD image
-
-If you have a raw eMMC dump from iOptron (typically ~30 GB), you can shrink it to a compressed image:
-
-```bash
-sudo apt install e2fsprogs parted
-sudo scripts/shrink-stock-image.sh /path/to/stock-image.dd
-```
-
-This shrinks the ext4 filesystem to its minimum size, truncates the unused space, and compresses the result to `images/imate-stock-restore.img.gz` (~6.6 GB). The original image is not modified.
-
-## Scripts Reference
-
-| Script | Description |
-|--------|-------------|
-| `scripts/install` | **Full installer** — connect, preserve stock files, download/upload image, replace OS, reboot |
-| `scripts/rootfs-setup.sh` | Build a Debian Trixie rootfs tarball for the iMate (requires root, debootstrap, qemu-user-static) |
-| `scripts/shrink-stock-image.sh` | Shrink iOptron's ~30 GB stock DD image to ~6.6 GB compressed |
-
-## Hardware Documentation
-
-Detailed hardware reference is in [`hardware/imate-h6/`](hardware/imate-h6/):
-
-- [`inventory.md`](hardware/imate-h6/inventory.md) — Full hardware inventory, GPIO map, WiFi/BT details, partition layout, stock services
-
-## Troubleshooting
-
-### Can't find iMate on the network
-
-- Make sure the iMate is powered on and connected via ethernet
-- The installer tries hostnames (`iMate`, `iMate.local`) then scans the local subnet
-- If auto-detection fails, pass the IP directly: `./scripts/install 192.168.1.x`
-- Check your router's DHCP leases for the iMate's IP
-
-### SSH connection refused
-
-- Stock credentials are `imate` / `imate` — if these don't work, the device may already be flashed
-- After flashing, credentials change to `astro` / `astro`
-- Wait 30–60 seconds after power-on for SSH to be ready
-
-### Installation or restore failed mid-way
-
-The stock boot chain is never modified, so the device will always boot. If the rootfs replacement was interrupted:
-
-- The device may still be accessible via SSH — try connecting and re-running the script
-- If the device won't boot to SSH, use iOptron's SD card recovery image: [Restore/Update iMate IMG File](https://www.ioptron.com/Articles.asp?ID=366)
-
-### WiFi not working after install
-
-The Unisoc UWE5622 WiFi driver (`sprdwl_ng`) only works with the stock Allwinner BSP kernel. The installer preserves this kernel and its modules automatically. If WiFi isn't working:
-
-- Check that the `sprdwl_ng` module is loaded: `lsmod | grep sprdwl`
-- Load it manually: `sudo modprobe sprdwl_ng`
-- Verify firmware files exist: `ls /lib/firmware/wcnmodem.bin`
+See [`hardware/imate-h6/`](hardware/imate-h6/) — [`inventory.md`](hardware/imate-h6/inventory.md)
+(GPIO map, WiFi/BT chipset, partition layout) and
+[`fix-apt-trixie-repos.md`](hardware/imate-h6/fix-apt-trixie-repos.md).
 
 ## License
 
