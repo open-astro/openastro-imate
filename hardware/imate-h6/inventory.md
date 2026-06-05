@@ -89,15 +89,15 @@ Controlled interactively via `/home/imate/imatepowerbox.sh`.
 - **Chip:** Unisoc UWE5622 (Spreadtrum/Marlin2)
 - **Chip ID:** 0x2355b001
 - **Interface:** SDIO
-- **WiFi driver:** `sprdwl_ng` (out-of-tree, BSP kernel only — not in mainline Linux)
+- **WiFi driver:** `sprdwl_ng` (out-of-tree UWE5622). Not in *vanilla* mainline, but **bundled in Armbian's mainline-based kernel** (the basis for OpenAstro), so a modern kernel keeps WiFi.
 - **WiFi firmware:** `/lib/firmware/wcnmodem.bin`, `/lib/firmware/wifi_2355b001_1ant.ini`
 - **BT driver:** `sprdbt_tty`
 - **Helper module:** `sunxi_addr` (address mapping for SDIO)
-- **GPIO chips:** gpiochip0 (main), gpiochip352 (r_pio/PL)
+- **GPIO chips (stock BSP):** gpiochip0 (main), gpiochip352 (r_pio/PL). On the OpenAstro mainline kernel the numbering differs: **gpiochip1 = main bank** (`300b000.pinctrl`, 256 lines — where DC1=118/DC2=114 live) and gpiochip0 = `7022000.pinctrl` (r_pio/PL, 64 lines).
 - **AP mode:** Confirmed working (hostapd, 802.11ac, 5 GHz channel 40)
 - **Station mode:** Requires testing on new OS
 
-**Critical:** The UWE5622 WiFi driver is only available in the Allwinner BSP kernel (5.16.17-sun50iw6). A mainline kernel would lose WiFi. The stock kernel and modules must be preserved.
+**Note (OpenAstro):** Armbian's mainline-based kernel also ships the UWE5622 driver (`drivers/net/wireless/uwe5622` → `sprdwl_ng` + `sprdbt_tty`) plus firmware and an auto-load config, so OpenAstro runs a mainline kernel and keeps WiFi/BT (AP mode confirmed). The rest of this file documents the original **stock BSP** system for reference.
 
 ## FTDI Library
 
