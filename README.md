@@ -69,13 +69,11 @@ nmcli dev wifi connect "<SSID>" password "<pass>"
 
 ## Install AlpacaBridge
 
-AlpacaBridge is **not** baked into the image — install it from the OpenAstro apt
-repository, the same as on every other platform (see the
-[AlpacaBridge install guide](https://github.com/open-astro/AlpacaBridge)):
-
-```bash
-sudo apt install alpacabridge
-```
+AlpacaBridge is **not** baked into the image. Install it by following the
+[AlpacaBridge install guide](https://github.com/open-astro/AlpacaBridge), which adds
+the OpenAstro apt repository and installs the package — the same as on every other
+platform. (The image deliberately ships no apt repo of its own, so `apt install
+alpacabridge` works only after the guide has configured the repository.)
 
 `libgpiod` (v2) is already in the image, so the **iMate PowerBox** works as soon as
 AlpacaBridge is installed — add it in the AlpacaBridge web UI as a **Switch → iOptron
