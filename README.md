@@ -30,14 +30,23 @@ flash it to a microSD card (8 GB+) with [Raspberry Pi Imager](https://www.raspbe
 xzcat openastro-imate.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
-### 2. Boot once from the SD — it installs itself to the eMMC
+### 2. First boot — from the SD card (installs to eMMC)
 
-Insert the SD, power on the iMate, and **watch the status LED**:
+Insert the SD card, power on the iMate, and **watch the status LED**:
 
 | LED | Meaning |
 |-----|---------|
-| 🔴 **Red blinking** | Installing to internal storage — **do not remove the SD** |
-| 🟢 **Solid green** | Done — power off and remove the SD card |
+| 🔴🟢 **Red & green blinking** | Booting from the SD card — **do not remove the SD** |
+| 🔴 **Solid red** | Installing to eMMC — **do not remove the SD** |
+| 🟢 **Solid green** | Install complete — power off and remove the SD card |
+
+### 3. Second boot — without the SD card
+
+With the SD card removed, power the iMate back on:
+
+| LED | Meaning |
+|-----|---------|
+| 🔴🟢 **Red & green blinking** | Booting from the device (eMMC) |
 | 🔴 **Solid red** | Normal operation (powered on) |
 
 ### 3. Remove the SD — done
