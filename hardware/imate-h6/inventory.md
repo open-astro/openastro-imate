@@ -50,7 +50,7 @@ Swap is zram-based (zram0 = ~992 MB swap, zram1 = 50 MB for /var/log).
 
 The iMate runs as a WiFi AP on wlan0:
 
-- **SSID:** `iMate_85F2D7` (derived from last 3 octets of wlan0 MAC)
+- **SSID (stock firmware):** `iMate_85F2D7` (derived from last 3 octets of wlan0 MAC); OpenAstro uses `OpenAstro-XXXX` (last 4 hex)
 - **Security:** WPA2-PSK, default passphrase `12345678`
 - **Mode:** 802.11ac, channel 40 (5 GHz)
 - **Subnet:** 172.24.1.0/24
