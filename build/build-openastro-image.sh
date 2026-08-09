@@ -3,12 +3,12 @@
 #
 # Customizes a stock Armbian "Orange Pi 3 LTS" image by running the OpenAstro
 # layer (openastro/openastro-setup.sh) inside a chroot, then repacks it as a
-# compressed, flashable image. The build host must be aarch64 (native chroot —
+# compressed, flashable image. The build host must be aarch64 (native chroot -
 # no qemu), e.g. another Armbian/Debian arm64 box or the iMate itself.
 #
 # Usage: sudo build/build-openastro-image.sh <stock-armbian.img[.xz]> [output.img.xz]
 #
-# AlpacaBridge is NOT baked in — users apt-install it after flashing.
+# AlpacaBridge is NOT baked in - users apt-install it after flashing.
 set -euo pipefail
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"

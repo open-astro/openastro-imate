@@ -1,4 +1,4 @@
-# iOptron iMate — Hardware Inventory
+# iOptron iMate - Hardware Inventory
 
 ## Overview
 
@@ -79,7 +79,7 @@ Two GPIO-controlled relay outputs for the iMate PowerBox accessory:
 |------|-------------|------|-------------|---------------|
 | DC1 | 2 | 118 (PWM.0) | 7 | ON (high) |
 | DC2 | 6 | 114 (PD18) | 12 | ON (high) |
-| DC3 | — | — | — | Always on (passthrough) |
+| DC3 | - | - | - | Always on (passthrough) |
 
 Set to output mode and driven high in `/etc/rc.local`.
 Controlled interactively via `/home/imate/imatepowerbox.sh`.
@@ -93,7 +93,7 @@ Controlled interactively via `/home/imate/imatepowerbox.sh`.
 - **WiFi firmware:** `/lib/firmware/wcnmodem.bin`, `/lib/firmware/wifi_2355b001_1ant.ini`
 - **BT driver:** `sprdbt_tty`
 - **Helper module:** `sunxi_addr` (address mapping for SDIO)
-- **GPIO chips (stock BSP):** gpiochip0 (main), gpiochip352 (r_pio/PL). On the OpenAstro mainline kernel the numbering differs: **gpiochip1 = main bank** (`300b000.pinctrl`, 256 lines — where DC1=118/DC2=114 live) and gpiochip0 = `7022000.pinctrl` (r_pio/PL, 64 lines).
+- **GPIO chips (stock BSP):** gpiochip0 (main), gpiochip352 (r_pio/PL). On the OpenAstro mainline kernel the numbering differs: **gpiochip1 = main bank** (`300b000.pinctrl`, 256 lines - where DC1=118/DC2=114 live) and gpiochip0 = `7022000.pinctrl` (r_pio/PL, 64 lines).
 - **AP mode:** Confirmed working (hostapd, 802.11ac, 5 GHz channel 40)
 - **Station mode:** Requires testing on new OS
 
@@ -101,7 +101,7 @@ Controlled interactively via `/home/imate/imatepowerbox.sh`.
 
 ## FTDI Library
 
-FTDI D2XX library installed at `/usr/local/lib/libftd2xx.so.1.4.27` with headers at `/usr/local/include/ftd2xx.h`. This is likely used for USB-to-serial communication with the mount via an FTDI chip (no FTDI device was present on USB at time of inventory — mount was not connected).
+FTDI D2XX library installed at `/usr/local/lib/libftd2xx.so.1.4.27` with headers at `/usr/local/include/ftd2xx.h`. This is likely used for USB-to-serial communication with the mount via an FTDI chip (no FTDI device was present on USB at time of inventory - mount was not connected).
 
 ## iPolar (Polar Alignment Server)
 
@@ -139,11 +139,11 @@ Key services beyond standard Debian:
 | lightdm | Display manager |
 | bluetooth | Bluetooth stack |
 | chrony | NTP time sync |
-| strongswan + xl2tpd | VPN (IPsec/L2TP) — purpose unclear |
-| cups | Print server — likely unused |
+| strongswan + xl2tpd | VPN (IPsec/L2TP) - purpose unclear |
+| cups | Print server - likely unused |
 | ssh | OpenSSH server |
 | smartmontools | Disk health monitoring |
-| tcp_server | Dart TCP control server (port 3000) — iOptron app interface |
+| tcp_server | Dart TCP control server (port 3000) - iOptron app interface |
 | haveged | Entropy daemon |
 
 ## Boot Configuration (orangepiEnv.txt)

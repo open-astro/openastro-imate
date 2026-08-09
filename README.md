@@ -4,12 +4,12 @@
 
 OpenAstro OS for the **iOptron iMate** (OrangePi 3 LTS / Allwinner H6): an
 [Armbian](https://www.armbian.com/)-based **Debian 13 (Trixie)** image on a
-mainline kernel — with the iMate's WiFi access point, full GPIO/power-port
+mainline kernel - with the iMate's WiFi access point, full GPIO/power-port
 support, and everything ready for
 [AlpacaBridge](https://github.com/open-astro/AlpacaBridge).
 
 You flash one image to a microSD, boot the iMate once, and it **installs itself
-to the internal eMMC** — then you pull the SD and it runs from internal storage.
+to the internal eMMC** - then you pull the SD and it runs from internal storage.
 No SSH, no scripts, no configuration.
 
 ## Supported hardware
@@ -30,17 +30,17 @@ flash it to a microSD card (8 GB+) with [Raspberry Pi Imager](https://www.raspbe
 xzcat openastro-imate.img.xz | sudo dd of=/dev/sdX bs=4M status=progress conv=fsync
 ```
 
-### 2. First boot — from the SD card (installs to eMMC)
+### 2. First boot - from the SD card (installs to eMMC)
 
 Insert the SD card, power on the iMate, and **watch the status LED**:
 
 | LED | Meaning |
 |-----|---------|
-| 🔴🟢 **Red & green blinking** | Booting from the SD card — **do not remove the SD** |
-| 🔴 **Solid red** | Installing to eMMC — **do not remove the SD** |
-| 🟢 **Solid green** | Install complete — power off and remove the SD card |
+| 🔴🟢 **Red & green blinking** | Booting from the SD card - **do not remove the SD** |
+| 🔴 **Solid red** | Installing to eMMC - **do not remove the SD** |
+| 🟢 **Solid green** | Install complete - power off and remove the SD card |
 
-### 3. Second boot — without the SD card
+### 3. Second boot - without the SD card
 
 With the SD card removed, power the iMate back on:
 
@@ -49,7 +49,7 @@ With the SD card removed, power the iMate back on:
 | 🔴🟢 **Red & green blinking** | Booting from the device (eMMC) |
 | 🔴 **Solid red** | Normal operation (powered on) |
 
-### 3. Remove the SD — done
+### 3. Remove the SD - done
 
 When the LED is **solid green**, power off, **remove the microSD**, and power back on.
 The iMate now boots OpenAstro from its internal eMMC. The SD card is no longer needed.
@@ -59,7 +59,7 @@ The iMate now boots OpenAstro from its internal eMMC. The SD card is no longer n
 | Setting | Value |
 |---------|-------|
 | Hostname | `openastro` |
-| Login | `astro` / `astro` — **change immediately:** `passwd` |
+| Login | `astro` / `astro` - **change immediately:** `passwd` |
 | WiFi AP | `iMate_<MAC>` (5 GHz), password `12345678` |
 | AP address | `172.24.1.1` (DHCP for clients) |
 | Ethernet | DHCP |
@@ -80,12 +80,12 @@ nmcli dev wifi connect "<SSID>" password "<pass>"
 
 AlpacaBridge is **not** baked into the image. Install it by following the
 [AlpacaBridge install guide](https://github.com/open-astro/AlpacaBridge), which adds
-the OpenAstro apt repository and installs the package — the same as on every other
+the OpenAstro apt repository and installs the package - the same as on every other
 platform. (The image deliberately ships no apt repo of its own, so `apt install
 alpacabridge` works only after the guide has configured the repository.)
 
 `libgpiod` (v2) is already in the image, so the **iMate PowerBox** works as soon as
-AlpacaBridge is installed — add it in the AlpacaBridge web UI as a **Switch → iOptron
+AlpacaBridge is installed - add it in the AlpacaBridge web UI as a **Switch → iOptron
 → iMate PowerBox** (it drives the DC ports over `/dev/gpiochip1`).
 
 ### DC power ports
@@ -105,7 +105,7 @@ After restoring, the stock login is `imate` / `imate` and the WiFi password is `
 
 The release image is built from a stock Armbian *Orange Pi 3 LTS* image plus the
 OpenAstro layer. On an **aarch64** host (another arm64 Debian/Armbian box, or the
-iMate itself — it's a native chroot, no emulation):
+iMate itself - it's a native chroot, no emulation):
 
 ```bash
 # 1. grab the upstream Armbian "Orange Pi 3 LTS" (Trixie, current kernel) image
@@ -116,17 +116,17 @@ sudo apt install parted e2fsprogs
 sudo build/build-openastro-image.sh armbian.img.xz images/openastro-imate.img.xz
 ```
 
-- [`build/build-openastro-image.sh`](build/build-openastro-image.sh) — customizes the
+- [`build/build-openastro-image.sh`](build/build-openastro-image.sh) - customizes the
   Armbian image in a chroot and produces a compressed, flashable `.img.xz`.
-- [`openastro/openastro-setup.sh`](openastro/openastro-setup.sh) — the OpenAstro layer
+- [`openastro/openastro-setup.sh`](openastro/openastro-setup.sh) - the OpenAstro layer
   (WiFi AP, libgpiod/GPIO, dark-for-imaging LEDs, eMMC auto-installer). Idempotent;
   also runnable directly on a booted Armbian board.
-- [`openastro/openastro-emmc-install.sh`](openastro/openastro-emmc-install.sh) — the
+- [`openastro/openastro-emmc-install.sh`](openastro/openastro-emmc-install.sh) - the
   first-boot SD→eMMC self-installer.
 
 ## Hardware documentation
 
-See [`hardware/imate-h6/inventory.md`](hardware/imate-h6/inventory.md) — GPIO map,
+See [`hardware/imate-h6/inventory.md`](hardware/imate-h6/inventory.md) - GPIO map,
 WiFi/BT chipset, and partition layout.
 
 ## License

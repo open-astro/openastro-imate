@@ -18,7 +18,7 @@ log() { echo "[openastro-emmc] $*"; }
 # --- LED progress signalling -------------------------------------------------
 # Red blinking  = installing to eMMC, do NOT remove the SD card.
 # Solid green   = done, safe to power off and remove the SD.
-# (Anything else / still blinking = not finished or failed — leave the SD in.)
+# (Anything else / still blinking = not finished or failed - leave the SD in.)
 _leds() { ls -d /sys/class/leds/*"$1"* 2>/dev/null; }
 led_installing() {
     for l in $(_leds green); do echo none > "$l/trigger" 2>/dev/null || true; echo 0 > "$l/brightness" 2>/dev/null || true; done
@@ -85,4 +85,4 @@ sync
 umount "$MNT"
 touch "$DONE_MARKER"
 led_done   # solid green = safe to power off and remove the SD
-log "Done. OpenAstro is on the eMMC — solid green LED: power off and remove the SD card."
+log "Done. OpenAstro is on the eMMC - solid green LED: power off and remove the SD card."
