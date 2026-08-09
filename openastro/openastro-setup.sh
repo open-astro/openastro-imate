@@ -4,7 +4,7 @@
 # This turns a stock Armbian "Orange Pi 3 LTS" image (Debian 13 Trixie, mainline
 # kernel) into the OpenAstro OS for the iMate: the stock-style WiFi access point,
 # libgpiod v2 + GPIO plumbing for the iMate PowerBox, dark-for-imaging LEDs, and
-# a self-install-to-eMMC flow. AlpacaBridge is NOT included here — users install
+# a self-install-to-eMMC flow. AlpacaBridge is NOT included here - users install
 # it from the OpenAstro apt repository (apt install alpacabridge), same as the
 # other platforms.
 #
@@ -160,7 +160,7 @@ systemctl enable openastro-ap-up.service hostapd dnsmasq >/dev/null 2>&1
 log "WiFi AP configured."
 
 # ============================================================
-# System identity (turnkey — no Armbian first-boot wizard)
+# System identity (turnkey - no Armbian first-boot wizard)
 # ============================================================
 log "Setting system identity..."
 OA_HOSTNAME="${OPENASTRO_HOSTNAME:-openastro}"
@@ -186,7 +186,7 @@ rm -f /root/.not_logged_in_yet 2>/dev/null || true
 #
 # iMate PowerBox is on ${POWERBOX_GPIOCHIP} (mainline H6 main bank): DC1=line 118
 # (PD22), DC2=line 114 (PD18); DC3 is an always-on passthrough. AlpacaBridge's
-# iMate PowerBox driver talks to gpiochip1 via libgpiod — its service user must
+# iMate PowerBox driver talks to gpiochip1 via libgpiod - its service user must
 # be a member of the gpio group (the alpacabridge .deb handles that on install).
 log "Enabling GPIO access (libgpiod v2) for the PowerBox..."
 getent group gpio >/dev/null || groupadd --system gpio
@@ -195,7 +195,7 @@ KERNEL=="gpiochip[0-9]*", GROUP="gpio", MODE="0660"
 EOF
 
 # ============================================================
-# Dark for imaging — turn off the board LEDs
+# Dark for imaging - turn off the board LEDs
 # ============================================================
 # A *blinking* status LED ruins astrophotography at night. So kill every LED
 # trigger (no blinking) and turn everything off, then leave just the red status
@@ -237,7 +237,7 @@ systemctl enable openastro-leds-off.service >/dev/null 2>&1
 # ============================================================
 # When the image is booted from the removable SD, copy OpenAstro to the eMMC and
 # write the bootloader, so the user just flashes the SD, powers on, waits, and
-# removes the SD — the iMate then boots from internal storage with no SD needed.
+# removes the SD - the iMate then boots from internal storage with no SD needed.
 log "Installing eMMC auto-installer..."
 install -m 0755 "$(dirname "$0")/openastro-emmc-install.sh" /usr/local/sbin/openastro-emmc-install.sh 2>/dev/null || true
 cat > /etc/systemd/system/openastro-emmc-install.service <<EOF
