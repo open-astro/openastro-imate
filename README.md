@@ -60,12 +60,12 @@ The iMate now boots OpenAstro from its internal eMMC. The SD card is no longer n
 |---------|-------|
 | Hostname | `openastro` |
 | Login | `astro` / `astro` - **change immediately:** `passwd` |
-| WiFi AP | `iMate_<MAC>` (5 GHz), password `12345678` |
+| WiFi AP | `OpenAstro-XXXX` (5 GHz, XXXX = last 4 hex of the WiFi MAC), password `12345678` |
 | AP address | `172.24.1.1` (DHCP for clients) |
 | Ethernet | DHCP |
 | Status LED | Solid red = on |
 
-Reach it over ethernet (`ssh astro@<ip>`) or by joining the `iMate_…` WiFi.
+Reach it over ethernet (`ssh astro@<ip>`) or by joining the `OpenAstro-…` WiFi.
 
 ### Connect to your own network instead (optional)
 

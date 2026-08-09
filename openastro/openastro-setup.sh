@@ -19,7 +19,7 @@
 set -euo pipefail
 
 # --- Config (override via env) ---
-AP_SSID_PREFIX="${AP_SSID_PREFIX:-iMate}"   # SSID becomes <prefix>_<wlan0 MAC last 6 hex>
+AP_SSID_PREFIX="${AP_SSID_PREFIX:-OpenAstro}"   # SSID becomes <prefix>-<wlan0 MAC last 4 hex>
 AP_PASSPHRASE="${AP_PASSPHRASE:-12345678}"
 AP_IP="${AP_IP:-172.24.1.1}"
 AP_SUBNET="${AP_SUBNET:-172.24.1.0/24}"
@@ -66,7 +66,7 @@ cat > /etc/hostapd/hostapd.conf <<EOF
 # rejects VHT/80 MHz; HT40 = 40 MHz is plenty and proven to come up).
 interface=wlan0
 driver=nl80211
-ssid=${AP_SSID_PREFIX}_AP
+ssid=${AP_SSID_PREFIX}-AP
 country_code=${AP_COUNTRY}
 ieee80211d=1
 hw_mode=a
@@ -120,7 +120,8 @@ cat > /etc/sysctl.d/99-openastro-ap.conf <<EOF
 net.ipv4.ip_forward=1
 EOF
 
-# Derive SSID from wlan0 MAC (matches the stock iMate_<MAC> scheme).
+# Derive SSID from wlan0 MAC (matches the OpenAstro-XXXX scheme used on the
+# other OpenAstro boards).
 cat > /usr/local/sbin/openastro-ap-ssid.sh <<'EOF'
 #!/bin/bash
 set -e
@@ -128,7 +129,7 @@ IFACE=wlan0; CONF=/etc/hostapd/hostapd.conf
 for _ in $(seq 1 30); do [ -r "/sys/class/net/$IFACE/address" ] && break; sleep 0.5; done
 [ -r "/sys/class/net/$IFACE/address" ] || exit 0
 mac=$(tr -d ':' < "/sys/class/net/$IFACE/address" | tr 'a-f' 'A-F')
-sed -i "s/^ssid=.*/ssid=${AP_SSID_PREFIX}_${mac: -6}/" "$CONF"
+sed -i "s/^ssid=.*/ssid=${AP_SSID_PREFIX}-${mac: -4}/" "$CONF"
 EOF
 # Bake the configured prefix into the script (it runs without env at boot).
 sed -i "s/\${AP_SSID_PREFIX}/${AP_SSID_PREFIX}/g" /usr/local/sbin/openastro-ap-ssid.sh
