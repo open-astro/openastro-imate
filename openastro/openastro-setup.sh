@@ -2,29 +2,34 @@
 # OpenAstro layer for the iOptron iMate (OrangePi 3 LTS / Allwinner H6).
 #
 # This turns a stock Armbian "Orange Pi 3 LTS" image (Debian 13 Trixie, mainline
-# kernel) into the OpenAstro OS for the iMate: the stock-style WiFi access point,
-# libgpiod v2 + GPIO plumbing for the iMate PowerBox, dark-for-imaging LEDs, and
-# a self-install-to-eMMC flow. AlpacaBridge is NOT included here - users install
-# it from the OpenAstro apt repository (apt install alpacabridge), same as the
-# other platforms.
+# kernel) into the OpenAstro OS for the iMate: the standard OpenAstro WiFi
+# access point (OpenAstro-XXXX / 12345678), libgpiod v2 + GPIO plumbing for the
+# iMate PowerBox, dark-for-imaging LEDs, and a self-install-to-eMMC flow.
 #
 # Why Armbian instead of the old stock-BSP overlay: the stock 5.16 Allwinner BSP
 # kernel OOPSes in cpufreq_dt when the WCN/WiFi chip powers on, wedging the box.
 # Armbian's mainline kernel fixes cpufreq AND already ships the UWE5622 WiFi/BT
 # driver, so we inherit a maintained kernel with working DVFS, USB3, WiFi and BT.
 #
-# Idempotent: safe to re-run. Runs as root, either post-flash on a booted board
-# or from the Armbian build hook (build/customize-image.sh).
+# Networking matches the other OpenAstro images (fleet policy): NetworkManager
+# manages ALL interfaces, and the AP is an NM keyfile connection (mode=ap,
+# ipv4.method=shared). AlpacaBridge's WiFi manager drives this same NM setup
+# over D-Bus. Note: an earlier iteration ran standalone hostapd because the
+# UWE5622 driver deadlocked when NM auto-managed the radio as a client; the
+# keyfile AP is a different code path - validate on hardware and fall back to
+# 2.4 GHz (AP_BAND=bg AP_CHANNEL=6) if 5 GHz misbehaves.
+#
+# Idempotent: safe to re-run. Runs as root, either in the image-build chroot
+# (build/build-openastro-image.sh) or post-flash on a booted board.
 
 set -euo pipefail
 
 # --- Config (override via env) ---
-AP_SSID_PREFIX="${AP_SSID_PREFIX:-OpenAstro}"   # SSID becomes <prefix>-<wlan0 MAC last 4 hex>
+AP_SSID="${AP_SSID:-OpenAstro}"
 AP_PASSPHRASE="${AP_PASSPHRASE:-12345678}"
-AP_IP="${AP_IP:-172.24.1.1}"
-AP_SUBNET="${AP_SUBNET:-172.24.1.0/24}"
-AP_DHCP_RANGE="${AP_DHCP_RANGE:-172.24.1.50,172.24.1.150,12h}"
-AP_CHANNEL="${AP_CHANNEL:-40}"              # 5 GHz ch40 (UNII-1, non-DFS); HT40 (VHT/80MHz is rejected by the UWE5622 mainline driver)
+AP_IP="${AP_IP:-172.24.1.1}"                # pinned (not NM's 10.42.0.1 default) so docs can give a fixed bridge IP
+AP_BAND="${AP_BAND:-a}"                     # 5 GHz; "bg" = 2.4 GHz fallback
+AP_CHANNEL="${AP_CHANNEL:-36}"              # UNII-1, non-DFS (the UWE5622 mainline driver rejects VHT/80 MHz; NM's AP uses HT which is fine)
 AP_COUNTRY="${AP_COUNTRY:-US}"
 # iMate PowerBox GPIO: mainline H6 main bank is /dev/gpiochip1 (BSP had it as gpiochip0).
 # DC1=line 118 (PD22), DC2=line 114 (PD18). DC3=always-on passthrough (no GPIO).
@@ -39,126 +44,194 @@ log() { echo "[openastro] $*"; }
 log "Installing packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
+# dnsmasq-base is only a Recommends of network-manager and Armbian minimal
+# disables recommends - without it NM's shared mode flaps forever with
+# "could not start dnsmasq".
 apt-get install -y -qq \
-    hostapd dnsmasq iptables iw wireless-regdb \
-    libgpiod3 gpiod \
+    network-manager dnsmasq-base iw wireless-regdb \
+    libgpiod3 gpiod curl gpg \
     >/dev/null
-# hostapd ships masked on Debian until configured.
-systemctl unmask hostapd 2>/dev/null || true
 
 # ============================================================
-# WiFi access point (standalone hostapd; NetworkManager ignores wlan0)
+# WiFi access point (NetworkManager)
 # ============================================================
-# The UWE5622 driver deadlocks if the OS auto-manages the radio via nl80211, so
-# we run hostapd directly and keep NetworkManager off wlan0 (it manages only the
-# wired link). Validated on Armbian 6.18.33: 5 GHz ch40 HT40 comes up clean.
+# The AP is an NM keyfile connection with mode=ap and ipv4.method=shared -
+# NM's internal dnsmasq serves DHCP/DNS and sets up NAT to whatever uplink
+# exists. AlpacaBridge's WiFi manager drives this same NM setup over D-Bus
+# (polkit rule ships in the AlpacaBridge .deb).
 log "Configuring WiFi access point..."
 
-cat > /etc/NetworkManager/conf.d/10-openastro-wlan0-unmanaged.conf <<EOF
-[keyfile]
-unmanaged-devices=interface-name:wlan0
-EOF
+# Retire the old hostapd/standalone-dnsmasq stack from earlier images.
+systemctl disable hostapd dnsmasq openastro-ap-up.service >/dev/null 2>&1 || true
+rm -f /etc/NetworkManager/conf.d/10-openastro-wlan0-unmanaged.conf \
+      /etc/hostapd/hostapd.conf /etc/default/hostapd \
+      /etc/dnsmasq.d/openastro-ap.conf /etc/openastro-nat.rules \
+      /etc/sysctl.d/99-openastro-ap.conf \
+      /usr/local/sbin/openastro-ap-ssid.sh \
+      /etc/systemd/system/openastro-ap-up.service
 
-mkdir -p /etc/hostapd
-cat > /etc/hostapd/hostapd.conf <<EOF
-# OpenAstro iMate AP. SSID is rewritten from the wlan0 MAC at boot by
-# openastro-ap-ssid.service. HT40 on 5 GHz ch40 (the UWE5622 mainline driver
-# rejects VHT/80 MHz; HT40 = 40 MHz is plenty and proven to come up).
-interface=wlan0
-driver=nl80211
-ssid=${AP_SSID_PREFIX}-AP
-country_code=${AP_COUNTRY}
-ieee80211d=1
-hw_mode=a
+# Armbian drives ethernet through netplan's networkd renderer; hand the whole
+# stack to NM instead and stop networkd so the two don't fight over the wired
+# port.
+if [ -d /etc/netplan ]; then
+    rm -f /etc/netplan/*.yaml
+    cat > /etc/netplan/10-openastro.yaml <<EOF
+network:
+  version: 2
+  renderer: NetworkManager
+EOF
+    chmod 600 /etc/netplan/10-openastro.yaml
+fi
+systemctl disable systemd-networkd.service systemd-networkd.socket >/dev/null 2>&1 || true
+
+# autoconnect keeps the hotspot up from boot: the board is always reachable
+# at ${AP_IP} via its own AP even when the user can't log in over their LAN.
+AP_UUID=$(cat /proc/sys/kernel/random/uuid)
+mkdir -p /etc/NetworkManager/system-connections
+cat > /etc/NetworkManager/system-connections/OpenAstro-AP.nmconnection <<EOF
+[connection]
+id=OpenAstro-AP
+uuid=${AP_UUID}
+type=wifi
+interface-name=wlan0
+autoconnect=true
+# Below default (0): saved client networks are tried first; the hotspot is
+# the fallback when none of them connects.
+autoconnect-priority=-10
+# Retry forever: with the default (4 attempts) a slow first boot can
+# permanently block the AP until reboot.
+autoconnect-retries=0
+
+[wifi]
+mode=ap
+ssid=${AP_SSID}
+band=${AP_BAND}
 channel=${AP_CHANNEL}
-ieee80211n=1
-ht_capab=[HT40+]
-wmm_enabled=1
-auth_algs=1
-macaddr_acl=0
-wpa=2
-wpa_passphrase=${AP_PASSPHRASE}
-wpa_key_mgmt=WPA-PSK
-rsn_pairwise=CCMP
-ctrl_interface=/var/run/hostapd
-ctrl_interface_group=0
-EOF
 
-cat > /etc/default/hostapd <<EOF
-DAEMON_CONF="/etc/hostapd/hostapd.conf"
-EOF
+[wifi-security]
+key-mgmt=wpa-psk
+psk=${AP_PASSPHRASE}
 
-cat > /etc/dnsmasq.d/openastro-ap.conf <<EOF
-interface=wlan0
-listen-address=${AP_IP}
-bind-dynamic
-server=8.8.8.8
-domain-needed
-bogus-priv
-dhcp-range=${AP_DHCP_RANGE}
-EOF
+[ipv4]
+method=shared
+addresses=${AP_IP}/24
 
-# Uplink-agnostic NAT: share whatever wired uplink exists (Armbian names it
-# end0/enx…, not eth0) with WiFi clients.
-cat > /etc/openastro-nat.rules <<EOF
-*filter
-:INPUT ACCEPT [0:0]
-:FORWARD ACCEPT [0:0]
-:OUTPUT ACCEPT [0:0]
--A FORWARD -o wlan0 -m state --state RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -i wlan0 -j ACCEPT
-COMMIT
-*nat
-:PREROUTING ACCEPT [0:0]
-:INPUT ACCEPT [0:0]
-:OUTPUT ACCEPT [0:0]
-:POSTROUTING ACCEPT [0:0]
--A POSTROUTING -s ${AP_SUBNET} ! -o wlan0 -j MASQUERADE
-COMMIT
+[ipv6]
+method=disabled
 EOF
-cat > /etc/sysctl.d/99-openastro-ap.conf <<EOF
-net.ipv4.ip_forward=1
-EOF
+chmod 600 /etc/NetworkManager/system-connections/OpenAstro-AP.nmconnection
 
-# Derive SSID from wlan0 MAC (matches the OpenAstro-XXXX scheme used on the
-# other OpenAstro boards).
-cat > /usr/local/sbin/openastro-ap-ssid.sh <<'EOF'
+# Keyfile was just (re)written with the generic SSID - let the suffixer run
+# again on next boot.
+rm -f /var/lib/openastro/ssid-set
+
+# Per-board SSID: suffix with the last 4 hex digits of the wlan0 MAC (unique
+# and burned into the SoC/radio). Runs once on first boot, before NM, so
+# multiple boards at a star party don't collide on the same SSID.
+cat > /usr/local/sbin/openastro-ssid <<'EOF'
 #!/bin/bash
-set -e
-IFACE=wlan0; CONF=/etc/hostapd/hostapd.conf
-for _ in $(seq 1 30); do [ -r "/sys/class/net/$IFACE/address" ] && break; sleep 0.5; done
-[ -r "/sys/class/net/$IFACE/address" ] || exit 0
-mac=$(tr -d ':' < "/sys/class/net/$IFACE/address" | tr 'a-f' 'A-F')
-sed -i "s/^ssid=.*/ssid=${AP_SSID_PREFIX}-${mac: -4}/" "$CONF"
+set -euo pipefail
+for _ in $(seq 1 60); do
+    [ -r /sys/class/net/wlan0/address ] && break
+    sleep 1
+done
+mac=$(tr -d ':' < /sys/class/net/wlan0/address)
+suffix=$(echo "${mac: -4}" | tr 'a-f' 'A-F')
+[ ${#suffix} -eq 4 ] || exit 0   # no/odd MAC: keep the generic SSID
+sed -i "s/^ssid=\(.*\)/ssid=\1-${suffix}/" \
+    /etc/NetworkManager/system-connections/OpenAstro-AP.nmconnection
 EOF
-# Bake the configured prefix into the script (it runs without env at boot).
-sed -i "s/\${AP_SSID_PREFIX}/${AP_SSID_PREFIX}/g" /usr/local/sbin/openastro-ap-ssid.sh
-chmod +x /usr/local/sbin/openastro-ap-ssid.sh
+chmod 755 /usr/local/sbin/openastro-ssid
 
-# Bring wlan0 up with the static AP address + set SSID, before hostapd.
-cat > /etc/systemd/system/openastro-ap-up.service <<EOF
+cat > /etc/systemd/system/openastro-ssid.service <<'EOF'
 [Unit]
-Description=OpenAstro AP: wlan0 static IP + SSID-from-MAC
-After=network-pre.target
-Wants=network-pre.target
-Before=hostapd.service
+Description=OpenAstro: per-board AP SSID from wlan0 MAC
+Before=NetworkManager.service
+ConditionPathExists=!/var/lib/openastro/ssid-set
 
 [Service]
 Type=oneshot
-RemainAfterExit=yes
-ExecStart=/usr/local/sbin/openastro-ap-ssid.sh
-ExecStart=/sbin/ip addr replace ${AP_IP}/24 dev wlan0
-ExecStart=/sbin/ip link set wlan0 up
-ExecStartPost=/usr/sbin/iptables-restore /etc/openastro-nat.rules
-ExecStop=/sbin/ip addr flush dev wlan0
+ExecStart=/usr/local/sbin/openastro-ssid
+ExecStartPost=/bin/mkdir -p /var/lib/openastro
+ExecStartPost=/bin/touch /var/lib/openastro/ssid-set
 
 [Install]
 WantedBy=multi-user.target
 EOF
+mkdir -p /etc/systemd/system/NetworkManager.service.d
+cat > /etc/systemd/system/NetworkManager.service.d/openastro-ssid.conf <<'EOF'
+[Unit]
+After=openastro-ssid.service
+Wants=openastro-ssid.service
+EOF
+systemctl enable openastro-ssid.service >/dev/null 2>&1
 
-systemctl enable openastro-ap-up.service hostapd dnsmasq >/dev/null 2>&1
+# Regdom for the 5 GHz AP - set every way that sticks in a chroot.
+iw reg set "${AP_COUNTRY}" 2>/dev/null || true
+cat > /etc/modprobe.d/openastro-regdom.conf <<EOF
+options cfg80211 ieee80211_regdom=${AP_COUNTRY}
+EOF
+# Clear any persisted rfkill soft-block so the AP can start on first boot.
+rm -f /var/lib/systemd/rfkill/*wlan* 2>/dev/null || true
 
-log "WiFi AP configured."
+# WiFi behavior for an always-on hotspot: no powersave (an AP that naps
+# drops clients serving a mount all night) and no scan MAC randomization
+# (keeps the radio identity stable/predictable).
+cat > /etc/NetworkManager/conf.d/20-openastro-wifi.conf <<'EOF'
+[connection]
+wifi.powersave=2
+
+[device]
+wifi.scan-rand-mac-address=no
+EOF
+
+systemctl enable NetworkManager >/dev/null 2>&1
+
+log "WiFi AP configured (SSID: ${AP_SSID}, band ${AP_BAND} ch${AP_CHANNEL}, ${AP_IP})."
+
+# ============================================================
+# First-boot reliability
+# ============================================================
+# The image build strips SSH host keys (unique per device). Regenerate them
+# before sshd starts - otherwise ssh.service fails on first boot
+# ("Connection refused" until a reboot).
+cat > /etc/systemd/system/openastro-sshkeys.service <<'EOF'
+[Unit]
+Description=OpenAstro: generate SSH host keys on first boot
+Before=ssh.service
+ConditionPathExists=!/etc/ssh/ssh_host_ed25519_key
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/ssh-keygen -A
+
+[Install]
+WantedBy=multi-user.target
+EOF
+mkdir -p /etc/systemd/system/ssh.service.d
+cat > /etc/systemd/system/ssh.service.d/openastro-after-keys.conf <<'EOF'
+[Unit]
+After=openastro-sshkeys.service
+Wants=openastro-sshkeys.service
+EOF
+systemctl enable openastro-sshkeys.service ssh >/dev/null 2>&1
+
+# Persistent journal, so first-boot failures survive a power cycle and can
+# actually be debugged.
+install -d -m 2755 -g systemd-journal /var/log/journal
+
+# ============================================================
+# Astro-device permissions (present from first boot, so device
+# access never depends on install order of AlpacaBridge)
+# ============================================================
+# ZWO EAF/EFW/CAA are USB HID devices; without this, /dev/hidraw* is
+# root-only until AlpacaBridge's own udev rules land AND the device is
+# replugged. Shipping the rule in the image removes that ordering trap.
+cat > /etc/udev/rules.d/70-openastro-zwo-hid.rules <<'EOF'
+# ZWO HID accessories (EAF focuser, EFW/EFWmini filter wheels, CAA rotator)
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="03c3", GROUP="users", MODE="0666"
+KERNEL=="hiddev*", ATTRS{idVendor}=="03c3", GROUP="users", MODE="0666"
+EOF
 
 # ============================================================
 # System identity (turnkey - no Armbian first-boot wizard)
@@ -170,7 +243,11 @@ OA_PASS="${OPENASTRO_PASS:-astro}"
 echo "$OA_HOSTNAME" > /etc/hostname
 if grep -q '^127.0.1.1' /etc/hosts; then sed -i "s/^127.0.1.1.*/127.0.1.1\t$OA_HOSTNAME/" /etc/hosts
 else echo -e "127.0.1.1\t$OA_HOSTNAME" >> /etc/hosts; fi
-id "$OA_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash -G sudo,dialout,plugdev,audio,video "$OA_USER"
+OA_GROUPS=""
+for g in sudo dialout plugdev audio video netdev gpio i2c spi; do
+    getent group "$g" >/dev/null && OA_GROUPS="${OA_GROUPS:+$OA_GROUPS,}$g"
+done
+id "$OA_USER" >/dev/null 2>&1 || useradd -m -s /bin/bash -G "$OA_GROUPS" "$OA_USER"
 echo "${OA_USER}:${OA_PASS}" | chpasswd
 # Disable Armbian's interactive first-login wizard (credentials are baked in).
 systemctl disable armbian-firstlogin.service 2>/dev/null || true
@@ -179,11 +256,10 @@ rm -f /root/.not_logged_in_yet 2>/dev/null || true
 # ============================================================
 # GPIO enablement for the iMate PowerBox (libgpiod v2)
 # ============================================================
-# AlpacaBridge is NOT baked into the image. Like the other OpenAstro platforms,
-# users install it from the OpenAstro apt repository (apt install alpacabridge).
-# The image only provides the hardware plumbing so the PowerBox works the moment
-# AB is installed: libgpiod v2 (libgpiod3 + the gpiod CLI, installed above), a
-# gpio group, and a udev rule making the gpiochip char devices group-accessible.
+# The image only provides the hardware plumbing so the PowerBox works the
+# moment AlpacaBridge is installed: libgpiod v2 (libgpiod3 + the gpiod CLI,
+# installed above), a gpio group, and a udev rule making the gpiochip char
+# devices group-accessible.
 #
 # iMate PowerBox is on ${POWERBOX_GPIOCHIP} (mainline H6 main bank): DC1=line 118
 # (PD22), DC2=line 114 (PD18); DC3 is an always-on passthrough. AlpacaBridge's
@@ -256,4 +332,21 @@ WantedBy=multi-user.target
 EOF
 systemctl enable openastro-emmc-install.service >/dev/null 2>&1
 
-log "OpenAstro OS layer complete (WiFi AP + libgpiod/GPIO + LEDs + eMMC auto-installer). Install AlpacaBridge with: apt install alpacabridge"
+# ============================================================
+# AlpacaBridge (preinstalled - the whole point of the appliance;
+# a dark site has no internet to apt install from)
+# ============================================================
+# Temporarily off by default: waiting on the next AlpacaBridge release
+# (new WiFi module). Flip to yes once it ships.
+INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-no}"
+if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
+log "Installing AlpacaBridge from apt.openastro.net..."
+curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
+    | gpg --dearmor --yes -o /usr/share/keyrings/openastro-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main" \
+    > /etc/apt/sources.list.d/openastro.list
+apt-get update -qq
+apt-get install -y -qq alpacabridge >/dev/null
+fi
+
+log "OpenAstro OS layer complete (NM WiFi AP + GPIO + LEDs + eMMC auto-installer)."
