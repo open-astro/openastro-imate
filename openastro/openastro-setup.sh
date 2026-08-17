@@ -41,7 +41,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
     hostapd dnsmasq iptables iw wireless-regdb \
-    network-manager \
+    network-manager polkitd \
     libgpiod3 gpiod \
     curl gnupg ca-certificates \
     >/dev/null
