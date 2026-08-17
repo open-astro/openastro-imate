@@ -41,6 +41,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
     hostapd dnsmasq iptables iw wireless-regdb \
+    network-manager \
     libgpiod3 gpiod \
     curl gnupg ca-certificates \
     >/dev/null
@@ -55,10 +56,15 @@ systemctl unmask hostapd 2>/dev/null || true
 # wired link). Validated on Armbian 6.18.33: 5 GHz ch40 HT40 comes up clean.
 log "Configuring WiFi access point..."
 
+mkdir -p /etc/NetworkManager/conf.d
 cat > /etc/NetworkManager/conf.d/10-openastro-wlan0-unmanaged.conf <<EOF
 [keyfile]
 unmanaged-devices=interface-name:wlan0
 EOF
+# NetworkManager (+ nmcli) is installed and enabled so AlpacaBridge's WiFi card
+# has a backend to talk to; wlan0 stays unmanaged (the AP is standalone hostapd
+# because of the UWE5622 nl80211 deadlock above).
+systemctl enable NetworkManager >/dev/null 2>&1 || true
 
 mkdir -p /etc/hostapd
 cat > /etc/hostapd/hostapd.conf <<EOF
