@@ -5,8 +5,8 @@
 OpenAstro OS for the **iOptron iMate** (OrangePi 3 LTS / Allwinner H6): an
 [Armbian](https://www.armbian.com/)-based **Debian 13 (Trixie)** image on a
 mainline kernel - with the iMate's WiFi access point, full GPIO/power-port
-support, and everything ready for
-[AlpacaBridge](https://github.com/open-astro/AlpacaBridge).
+support, and [AlpacaBridge](https://github.com/open-astro/AlpacaBridge)
+preinstalled and ready to use.
 
 You flash one image to a microSD, boot the iMate once, and it **installs itself
 to the internal eMMC** - then you pull the SD and it runs from internal storage.
@@ -76,17 +76,15 @@ nmcli dev wifi list
 nmcli dev wifi connect "<SSID>" password "<pass>"
 ```
 
-## Install AlpacaBridge
+## AlpacaBridge
 
-AlpacaBridge is **not** baked into the image. Install it by following the
-[AlpacaBridge install guide](https://github.com/open-astro/AlpacaBridge), which adds
-the OpenAstro apt repository and installs the package - the same as on every other
-platform. (The image deliberately ships no apt repo of its own, so `apt install
-alpacabridge` works only after the guide has configured the repository.)
+AlpacaBridge comes **preinstalled** (from the OpenAstro apt repository, which is
+configured in the image - `apt update && apt upgrade` gets you future releases).
+The appliance works out of the box, even at a dark site with no internet.
 
-`libgpiod` (v2) is already in the image, so the **iMate PowerBox** works as soon as
-AlpacaBridge is installed - add it in the AlpacaBridge web UI as a **Switch → iOptron
-→ iMate PowerBox** (it drives the DC ports over `/dev/gpiochip1`).
+`libgpiod` (v2) is in the image too, so the **iMate PowerBox** works immediately -
+add it in the AlpacaBridge web UI as a **Switch → iOptron → iMate PowerBox**
+(it drives the DC ports over `/dev/gpiochip1`).
 
 ### DC power ports
 

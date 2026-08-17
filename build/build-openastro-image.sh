@@ -8,7 +8,8 @@
 #
 # Usage: sudo build/build-openastro-image.sh <stock-armbian.img[.xz]> [output.img.xz]
 #
-# AlpacaBridge is NOT baked in - users apt-install it after flashing.
+# AlpacaBridge is baked in (installed from apt.openastro.net during the build,
+# so the chroot needs outbound network).
 set -euo pipefail
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"

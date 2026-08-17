@@ -4,9 +4,9 @@
 # This turns a stock Armbian "Orange Pi 3 LTS" image (Debian 13 Trixie, mainline
 # kernel) into the OpenAstro OS for the iMate: the stock-style WiFi access point,
 # libgpiod v2 + GPIO plumbing for the iMate PowerBox, dark-for-imaging LEDs, and
-# a self-install-to-eMMC flow. AlpacaBridge is NOT included here - users install
-# it from the OpenAstro apt repository (apt install alpacabridge), same as the
-# other platforms.
+# a self-install-to-eMMC flow. AlpacaBridge is preinstalled from the OpenAstro
+# apt repository (apt.openastro.net), so the appliance works out of the box even
+# at a dark site with no internet.
 #
 # Why Armbian instead of the old stock-BSP overlay: the stock 5.16 Allwinner BSP
 # kernel OOPSes in cpufreq_dt when the WCN/WiFi chip powers on, wedging the box.
@@ -42,6 +42,7 @@ apt-get update -qq
 apt-get install -y -qq \
     hostapd dnsmasq iptables iw wireless-regdb \
     libgpiod3 gpiod \
+    curl gnupg ca-certificates \
     >/dev/null
 # hostapd ships masked on Debian until configured.
 systemctl unmask hostapd 2>/dev/null || true
@@ -179,11 +180,9 @@ rm -f /root/.not_logged_in_yet 2>/dev/null || true
 # ============================================================
 # GPIO enablement for the iMate PowerBox (libgpiod v2)
 # ============================================================
-# AlpacaBridge is NOT baked into the image. Like the other OpenAstro platforms,
-# users install it from the OpenAstro apt repository (apt install alpacabridge).
-# The image only provides the hardware plumbing so the PowerBox works the moment
-# AB is installed: libgpiod v2 (libgpiod3 + the gpiod CLI, installed above), a
-# gpio group, and a udev rule making the gpiochip char devices group-accessible.
+# Hardware plumbing so the PowerBox works with the preinstalled AlpacaBridge:
+# libgpiod v2 (libgpiod3 + the gpiod CLI, installed above), a gpio group, and a
+# udev rule making the gpiochip char devices group-accessible.
 #
 # iMate PowerBox is on ${POWERBOX_GPIOCHIP} (mainline H6 main bank): DC1=line 118
 # (PD22), DC2=line 114 (PD18); DC3 is an always-on passthrough. AlpacaBridge's
@@ -256,4 +255,20 @@ WantedBy=multi-user.target
 EOF
 systemctl enable openastro-emmc-install.service >/dev/null 2>&1
 
-log "OpenAstro OS layer complete (WiFi AP + libgpiod/GPIO + LEDs + eMMC auto-installer). Install AlpacaBridge with: apt install alpacabridge"
+# ============================================================
+# AlpacaBridge (preinstalled - the whole point of the appliance;
+# a dark site has no internet to apt install from)
+# ============================================================
+INSTALL_ALPACABRIDGE="${INSTALL_ALPACABRIDGE:-yes}"
+if [ "$INSTALL_ALPACABRIDGE" = yes ]; then
+log "Installing AlpacaBridge from apt.openastro.net..."
+curl -fsSL https://apt.openastro.net/repo/openastro-archive-keyring.gpg \
+    | gpg --dearmor --yes -o /usr/share/keyrings/openastro-archive-keyring.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/openastro-archive-keyring.gpg] https://apt.openastro.net trixie main" \
+    > /etc/apt/sources.list.d/openastro.list
+apt-get update -qq
+apt-get install -y -qq alpacabridge >/dev/null
+log "AlpacaBridge $(dpkg-query -W -f '${Version}' alpacabridge) installed."
+fi
+
+log "OpenAstro OS layer complete (WiFi AP + libgpiod/GPIO + LEDs + eMMC auto-installer + AlpacaBridge)."
