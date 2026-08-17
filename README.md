@@ -82,6 +82,13 @@ AlpacaBridge comes **preinstalled** (from the OpenAstro apt repository, which is
 configured in the image - `apt update && apt upgrade` gets you future releases).
 The appliance works out of the box, even at a dark site with no internet.
 
+**Known caveat**: the AlpacaBridge **Personal Hotspot** card shows the hotspot as
+off and cannot manage it on the iMate. The hotspot is real and works (join
+`OpenAstro-XXXX`, password `12345678`) - it just runs as standalone hostapd
+because the iMate's UWE5622 WiFi driver cannot run an AP through
+NetworkManager/wpa_supplicant (it beacons but never completes client
+authentication). To change hotspot settings, edit `/etc/hostapd/hostapd.conf`.
+
 `libgpiod` (v2) is in the image too, so the **iMate PowerBox** works immediately -
 add it in the AlpacaBridge web UI as a **Switch → iOptron → iMate PowerBox**
 (it drives the DC ports over `/dev/gpiochip1`).

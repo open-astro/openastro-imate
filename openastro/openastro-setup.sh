@@ -51,9 +51,15 @@ systemctl unmask hostapd 2>/dev/null || true
 # ============================================================
 # WiFi access point (standalone hostapd; NetworkManager ignores wlan0)
 # ============================================================
-# The UWE5622 driver deadlocks if the OS auto-manages the radio via nl80211, so
-# we run hostapd directly and keep NetworkManager off wlan0 (it manages only the
-# wired link). Validated on Armbian 6.18.33: 5 GHz ch40 HT40 comes up clean.
+# The UWE5622 driver only supports a working AP under hostapd: wpa_supplicant's
+# AP mode (which NetworkManager uses for hotspots) activates and beacons, but
+# incoming client auth frames are never processed (empty station dump, clients
+# loop on the password prompt) - verified on hardware 2026-08-17 with PMF off
+# and strict WPA2/CCMP, hot-switch and clean boot. So we run hostapd directly
+# and keep NetworkManager off wlan0. Consequence: AlpacaBridge's Personal
+# Hotspot card (NM-based) shows the hotspot as off even though it is running;
+# fixing that needs a hostapd backend in AlpacaBridge.
+# Validated on Armbian 6.18.33: 5 GHz ch40 HT40 comes up clean.
 log "Configuring WiFi access point..."
 
 mkdir -p /etc/NetworkManager/conf.d
