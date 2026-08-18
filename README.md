@@ -5,8 +5,8 @@
 OpenAstro OS for the **iOptron iMate** (OrangePi 3 LTS / Allwinner H6): an
 [Armbian](https://www.armbian.com/)-based **Debian 13 (Trixie)** image on a
 mainline kernel - with the iMate's WiFi access point, full GPIO/power-port
-support, and everything ready for
-[AlpacaBridge](https://github.com/open-astro/AlpacaBridge).
+support, and [AlpacaBridge](https://github.com/open-astro/AlpacaBridge)
+preinstalled and ready to use.
 
 You flash one image to a microSD, boot the iMate once, and it **installs itself
 to the internal eMMC** - then you pull the SD and it runs from internal storage.
@@ -69,24 +69,44 @@ Reach it over ethernet (`ssh astro@<ip>`) or by joining the `OpenAstro-…` WiFi
 
 ### Connect to your own network instead (optional)
 
-NetworkManager manages the wired port; to also join an existing WiFi network:
+Everything is done from the **WiFi** card in the AlpacaBridge web UI (Server
+Info tab): scan for networks, join one with its password, and manage the
+Personal Hotspot - no command line needed.
 
-```bash
-nmcli dev wifi list
-nmcli dev wifi connect "<SSID>" password "<pass>"
-```
+**Hotspot-or-client, never both (iMate limitation).** Unlike OpenAstro boards
+with Broadcom WiFi (e.g. the Orange Pi 4 Pro), the iMate's UWE5622 chip cannot
+run the hotspot and a client connection at the same time. What that means in
+practice:
 
-## Install AlpacaBridge
+- While joined to your home network, the `OpenAstro-XXXX` hotspot is **off**.
+  Reach the device through your network instead: the AlpacaBridge web UI is at
+  `http://openastro.lan:6800/` (or `http://<device-ip>:6800/` - find the
+  address on your router).
+- When your network is out of range - e.g. at a dark site - NetworkManager
+  brings the hotspot back **automatically**; no action needed.
+- To force the hotspot back while your network is in range, toggle
+  **Personal Hotspot** on in the AlpacaBridge WiFi card (this disconnects the
+  device from your network).
+- The radio also cannot scan while the hotspot is running, so network lists
+  are gathered during a brief hotspot interruption.
 
-AlpacaBridge is **not** baked into the image. Install it by following the
-[AlpacaBridge install guide](https://github.com/open-astro/AlpacaBridge), which adds
-the OpenAstro apt repository and installs the package - the same as on every other
-platform. (The image deliberately ships no apt repo of its own, so `apt install
-alpacabridge` works only after the guide has configured the repository.)
+## AlpacaBridge
 
-`libgpiod` (v2) is already in the image, so the **iMate PowerBox** works as soon as
-AlpacaBridge is installed - add it in the AlpacaBridge web UI as a **Switch → iOptron
-→ iMate PowerBox** (it drives the DC ports over `/dev/gpiochip1`).
+AlpacaBridge comes **preinstalled** (from the OpenAstro apt repository, which is
+configured in the image - `apt update && apt upgrade` gets you future releases).
+The appliance works out of the box, even at a dark site with no internet.
+
+The hotspot is a NetworkManager profile (`OpenAstro-AP`), so the AlpacaBridge
+**Personal Hotspot** card manages it natively - name, password, band and
+on/off all work from the web UI, same as on the other OpenAstro boards. (The
+iMate's UWE5622 firmware rejects the PSK-SHA256 key-management variant that
+NetworkManager advertises by default; the image ships a dispatcher hook,
+`/etc/NetworkManager/dispatcher.d/90-uwe5622-psk-only`, that pins the hotspot
+to plain WPA2-PSK - without it, clients get stuck in a password loop.)
+
+`libgpiod` (v2) is in the image too, so the **iMate PowerBox** works immediately -
+add it in the AlpacaBridge web UI as a **Switch → iOptron → iMate PowerBox**
+(it drives the DC ports over `/dev/gpiochip1`).
 
 ### DC power ports
 
@@ -119,7 +139,7 @@ sudo build/build-openastro-image.sh armbian.img.xz images/openastro-imate.img.xz
 - [`build/build-openastro-image.sh`](build/build-openastro-image.sh) - customizes the
   Armbian image in a chroot and produces a compressed, flashable `.img.xz`.
 - [`openastro/openastro-setup.sh`](openastro/openastro-setup.sh) - the OpenAstro layer
-  (WiFi AP, libgpiod/GPIO, dark-for-imaging LEDs, eMMC auto-installer). Idempotent;
+  (NetworkManager WiFi + hotspot, libgpiod/GPIO, dark-for-imaging LEDs, eMMC auto-installer). Idempotent;
   also runnable directly on a booted Armbian board.
 - [`openastro/openastro-emmc-install.sh`](openastro/openastro-emmc-install.sh) - the
   first-boot SD→eMMC self-installer.

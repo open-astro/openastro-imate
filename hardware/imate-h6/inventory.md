@@ -97,7 +97,7 @@ Controlled interactively via `/home/imate/imatepowerbox.sh`.
 - **AP mode:** Confirmed working (hostapd, 802.11ac, 5 GHz channel 40)
 - **Station mode:** Requires testing on new OS
 
-**Note (OpenAstro):** Armbian's mainline-based kernel also ships the UWE5622 driver (`drivers/net/wireless/uwe5622` → `sprdwl_ng` + `sprdbt_tty`) plus firmware and an auto-load config, so OpenAstro runs a mainline kernel and keeps WiFi/BT (AP mode confirmed). The rest of this file documents the original **stock BSP** system for reference.
+**Note (OpenAstro):** Armbian's mainline-based kernel also ships the UWE5622 driver (`drivers/net/wireless/uwe5622` → `sprdwl_ng` + `sprdbt_tty`) plus firmware and an auto-load config, so OpenAstro runs a mainline kernel and keeps WiFi/BT. Both AP mode (NetworkManager hotspot with the PSK-only dispatcher hook; firmware rejects PSK-SHA256 in the RSN IE) and station mode (5 GHz WPA2 join, clean PTK/GTK install) are confirmed on hardware (2026-08-17). No AP+STA concurrency, and no scanning while beaconing. The rest of this file documents the original **stock BSP** system for reference.
 
 ## FTDI Library
 

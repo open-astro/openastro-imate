@@ -8,7 +8,8 @@
 #
 # Usage: sudo build/build-openastro-image.sh <stock-armbian.img[.xz]> [output.img.xz]
 #
-# AlpacaBridge is NOT baked in - users apt-install it after flashing.
+# AlpacaBridge is baked in (installed from apt.openastro.net during the build,
+# so the chroot needs outbound network).
 set -euo pipefail
 
 REPODIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -61,9 +62,10 @@ RESOLV_LINK=$(readlink "$MNT/etc/resolv.conf" 2>/dev/null || true)
 rm -f "$MNT/etc/resolv.conf"
 cp -L /etc/resolv.conf "$MNT/etc/resolv.conf" 2>/dev/null || echo 'nameserver 8.8.8.8' > "$MNT/etc/resolv.conf"
 
-install -d "$MNT/opt/openastro"
+install -d "$MNT/opt/openastro/modules"
 install -m 0755 "$REPODIR/openastro/openastro-setup.sh" \
                 "$REPODIR/openastro/openastro-emmc-install.sh" "$MNT/opt/openastro/"
+install -m 0644 "$REPODIR"/openastro/modules/*.ko "$MNT/opt/openastro/modules/"
 
 log "Running openastro-setup.sh in chroot..."
 chroot "$MNT" /bin/bash -c "cd /opt/openastro && ./openastro-setup.sh"
