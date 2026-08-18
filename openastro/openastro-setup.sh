@@ -2,7 +2,8 @@
 # OpenAstro layer for the iOptron iMate (OrangePi 3 LTS / Allwinner H6).
 #
 # This turns a stock Armbian "Orange Pi 3 LTS" image (Debian 13 Trixie, mainline
-# kernel) into the OpenAstro OS for the iMate: the stock-style WiFi access point,
+# kernel) into the OpenAstro OS for the iMate: NetworkManager-native WiFi (the
+# OpenAstro-XXXX hotspot and home-network joins, both managed from AlpacaBridge),
 # libgpiod v2 + GPIO plumbing for the iMate PowerBox, dark-for-imaging LEDs, and
 # a self-install-to-eMMC flow. AlpacaBridge is preinstalled from the OpenAstro
 # apt repository (apt.openastro.net), so the appliance works out of the box even
@@ -21,9 +22,7 @@ set -euo pipefail
 # --- Config (override via env) ---
 AP_SSID_PREFIX="${AP_SSID_PREFIX:-OpenAstro}"   # SSID becomes <prefix>-<wlan0 MAC last 4 hex>
 AP_PASSPHRASE="${AP_PASSPHRASE:-12345678}"
-AP_IP="${AP_IP:-172.24.1.1}"
-AP_SUBNET="${AP_SUBNET:-172.24.1.0/24}"
-AP_DHCP_RANGE="${AP_DHCP_RANGE:-172.24.1.50,172.24.1.150,12h}"
+AP_IP="${AP_IP:-172.24.1.1}"                # fleet-wide AP address; NM "shared" serves DHCP+NAT on it
 AP_CHANNEL="${AP_CHANNEL:-40}"              # 5 GHz ch40 (UNII-1, non-DFS); HT40 (VHT/80MHz is rejected by the UWE5622 mainline driver)
 AP_COUNTRY="${AP_COUNTRY:-US}"
 # iMate PowerBox GPIO: mainline H6 main bank is /dev/gpiochip1 (BSP had it as gpiochip0).
@@ -40,138 +39,157 @@ log "Installing packages..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
-    hostapd dnsmasq iptables iw wireless-regdb \
-    network-manager polkitd \
+    network-manager dnsmasq-base polkitd iptables iw wireless-regdb \
     libgpiod3 gpiod \
     curl gnupg ca-certificates \
     >/dev/null
-# hostapd ships masked on Debian until configured.
-systemctl unmask hostapd 2>/dev/null || true
 
 # ============================================================
-# WiFi access point (standalone hostapd; NetworkManager ignores wlan0)
+# WiFi (NetworkManager-native: hotspot + client join, like the other boards)
 # ============================================================
-# The UWE5622 driver only supports a working AP under hostapd: wpa_supplicant's
-# AP mode (which NetworkManager uses for hotspots) activates and beacons, but
-# incoming client auth frames are never processed (empty station dump, clients
-# loop on the password prompt) - verified on hardware 2026-08-17 with PMF off
-# and strict WPA2/CCMP, hot-switch and clean boot. So we run hostapd directly
-# and keep NetworkManager off wlan0. Consequence: AlpacaBridge's Personal
-# Hotspot card (NM-based) shows the hotspot as off even though it is running;
-# fixing that needs a hostapd backend in AlpacaBridge.
-# Validated on Armbian 6.18.33: 5 GHz ch40 HT40 comes up clean.
-log "Configuring WiFi access point..."
+# NetworkManager owns wlan0 outright: the hotspot is an NM AP-mode profile and
+# joining a home network is a plain NM client connection, so AlpacaBridge's
+# WiFi card (an NM D-Bus frontend) manages everything truthfully.
+#
+# UWE5622 quirks this section works around (all hardware-verified 2026-08-17):
+# - The firmware runs the AP SME and silently drops client association when
+#   the RSN IE advertises PSK-SHA256, which NM hardcodes into AP-mode
+#   key_mgmt (pmf=disable does not remove it). A dispatcher hook rewrites the
+#   supplicant AP network to plain WPA-PSK on every hotspot activation; with
+#   it, clients associate and complete the 4-way handshake reliably.
+# - 5 GHz needs a real regulatory domain before the AP will start (world
+#   domain forbids the channels), so the country is baked in at module load.
+# - The radio cannot scan while beaconing (no AP+STA concurrency); network
+#   lists must be gathered while the hotspot is down. That UX lives in
+#   AlpacaBridge, not here.
+log "Configuring WiFi (NetworkManager)..."
 
-mkdir -p /etc/NetworkManager/conf.d
-cat > /etc/NetworkManager/conf.d/10-openastro-wlan0-unmanaged.conf <<EOF
-[keyfile]
-unmanaged-devices=interface-name:wlan0
-EOF
-# NetworkManager (+ nmcli) is installed and enabled so AlpacaBridge's WiFi card
-# has a backend to talk to; wlan0 stays unmanaged (the AP is standalone hostapd
-# because of the UWE5622 nl80211 deadlock above).
+# Clean up the pre-NM hostapd stack (upgrades / re-runs on older installs).
+systemctl disable --now hostapd dnsmasq openastro-ap-up.service >/dev/null 2>&1 || true
+rm -f /etc/NetworkManager/conf.d/10-openastro-wlan0-unmanaged.conf \
+      /etc/hostapd/hostapd.conf /etc/default/hostapd \
+      /etc/dnsmasq.d/openastro-ap.conf /etc/openastro-nat.rules \
+      /etc/sysctl.d/99-openastro-ap.conf \
+      /etc/systemd/system/openastro-ap-up.service
+
 systemctl enable NetworkManager >/dev/null 2>&1 || true
 
-mkdir -p /etc/hostapd
-cat > /etc/hostapd/hostapd.conf <<EOF
-# OpenAstro iMate AP. SSID is rewritten from the wlan0 MAC at boot by
-# openastro-ap-ssid.service. HT40 on 5 GHz ch40 (the UWE5622 mainline driver
-# rejects VHT/80 MHz; HT40 = 40 MHz is plenty and proven to come up).
-interface=wlan0
-driver=nl80211
-ssid=${AP_SSID_PREFIX}-AP
-country_code=${AP_COUNTRY}
-ieee80211d=1
-hw_mode=a
+# Regulatory domain from module load, so the 5 GHz AP can start at boot
+# before any userspace (AlpacaBridge persists later changes itself).
+cat > /etc/modprobe.d/openastro-regdom.conf <<EOF
+options cfg80211 ieee80211_regdom=${AP_COUNTRY}
+EOF
+
+# UWE5622 + NM hotspot fix: strip PSK-SHA256 from the supplicant AP network
+# (see the section comment above).
+mkdir -p /etc/NetworkManager/dispatcher.d
+cat > /etc/NetworkManager/dispatcher.d/90-uwe5622-psk-only <<'EOF'
+#!/bin/sh
+# UWE5622 firmware silently rejects client association when the AP's RSN IE
+# advertises PSK-SHA256, and NetworkManager hardcodes "WPA-PSK WPA-PSK-SHA256"
+# for AP-mode connections regardless of the pmf setting. Force the supplicant
+# network to plain WPA-PSK whenever a hotspot comes up on wlan0.
+[ "$1" = "wlan0" ] || exit 0
+case "$2" in up|reapply) ;; *) exit 0 ;; esac
+
+mode=$(nmcli -g 802-11-wireless.mode connection show "$CONNECTION_UUID" 2>/dev/null)
+[ "$mode" = "ap" ] || exit 0
+
+id=$(wpa_cli -i wlan0 list_networks 2>/dev/null | awk 'NR==2 {print $1}')
+[ -n "$id" ] || exit 0
+
+km=$(wpa_cli -i wlan0 get_network "$id" key_mgmt 2>/dev/null)
+case "$km" in
+*SHA256*)
+    wpa_cli -i wlan0 set_network "$id" key_mgmt WPA-PSK
+    wpa_cli -i wlan0 disable_network "$id"
+    wpa_cli -i wlan0 enable_network "$id"
+    logger -t uwe5622-psk-only "stripped PSK-SHA256 from AP key_mgmt (network $id)"
+    ;;
+esac
+exit 0
+EOF
+chmod +x /etc/NetworkManager/dispatcher.d/90-uwe5622-psk-only
+
+# The hotspot profile, under AlpacaBridge's well-known id ("OpenAstro-AP") so
+# the web UI's Personal Hotspot card edits this exact profile. Low autoconnect
+# priority: a joined home network wins at boot when it is in range, and NM
+# falls back to the hotspot when it is not (client-or-AP, single radio).
+# SSID here is a placeholder; openastro-ap-ssid.service rewrites it from the
+# wlan0 MAC on first boot (OpenAstro-XXXX fleet scheme).
+mkdir -p /etc/NetworkManager/system-connections
+cat > /etc/NetworkManager/system-connections/OpenAstro-AP.nmconnection <<EOF
+[connection]
+id=OpenAstro-AP
+type=wifi
+autoconnect=true
+autoconnect-priority=-10
+
+[wifi]
+mode=ap
+band=a
 channel=${AP_CHANNEL}
-ieee80211n=1
-ht_capab=[HT40+]
-wmm_enabled=1
-auth_algs=1
-macaddr_acl=0
-wpa=2
-wpa_passphrase=${AP_PASSPHRASE}
-wpa_key_mgmt=WPA-PSK
-rsn_pairwise=CCMP
-ctrl_interface=/var/run/hostapd
-ctrl_interface_group=0
-EOF
+ssid=${AP_SSID_PREFIX}-AP
 
-cat > /etc/default/hostapd <<EOF
-DAEMON_CONF="/etc/hostapd/hostapd.conf"
-EOF
+[wifi-security]
+key-mgmt=wpa-psk
+psk=${AP_PASSPHRASE}
+# Strict WPA2/CCMP with PMF off - the UWE5622 driver has no
+# set_default_mgmt_key (IGTK install fails with EOPNOTSUPP and supplicant
+# aborts AP init), and an unpinned profile lets TKIP/PMF into the mix.
+pmf=1
+proto=rsn;
+group=ccmp;
+pairwise=ccmp;
 
-cat > /etc/dnsmasq.d/openastro-ap.conf <<EOF
-interface=wlan0
-listen-address=${AP_IP}
-bind-dynamic
-server=8.8.8.8
-domain-needed
-bogus-priv
-dhcp-range=${AP_DHCP_RANGE}
-EOF
+[ipv4]
+method=shared
+address1=${AP_IP}/24
 
-# Uplink-agnostic NAT: share whatever wired uplink exists (Armbian names it
-# end0/enx…, not eth0) with WiFi clients.
-cat > /etc/openastro-nat.rules <<EOF
-*filter
-:INPUT ACCEPT [0:0]
-:FORWARD ACCEPT [0:0]
-:OUTPUT ACCEPT [0:0]
--A FORWARD -o wlan0 -m state --state RELATED,ESTABLISHED -j ACCEPT
--A FORWARD -i wlan0 -j ACCEPT
-COMMIT
-*nat
-:PREROUTING ACCEPT [0:0]
-:INPUT ACCEPT [0:0]
-:OUTPUT ACCEPT [0:0]
-:POSTROUTING ACCEPT [0:0]
--A POSTROUTING -s ${AP_SUBNET} ! -o wlan0 -j MASQUERADE
-COMMIT
+[ipv6]
+method=disabled
 EOF
-cat > /etc/sysctl.d/99-openastro-ap.conf <<EOF
-net.ipv4.ip_forward=1
-EOF
+chmod 600 /etc/NetworkManager/system-connections/OpenAstro-AP.nmconnection
 
 # Derive SSID from wlan0 MAC (matches the OpenAstro-XXXX scheme used on the
 # other OpenAstro boards).
 cat > /usr/local/sbin/openastro-ap-ssid.sh <<'EOF'
 #!/bin/bash
 set -e
-IFACE=wlan0; CONF=/etc/hostapd/hostapd.conf
+IFACE=wlan0
+for _ in $(seq 1 60); do nmcli -t general status >/dev/null 2>&1 && break; sleep 1; done
 for _ in $(seq 1 30); do [ -r "/sys/class/net/$IFACE/address" ] && break; sleep 0.5; done
 [ -r "/sys/class/net/$IFACE/address" ] || exit 0
 mac=$(tr -d ':' < "/sys/class/net/$IFACE/address" | tr 'a-f' 'A-F')
-sed -i "s/^ssid=.*/ssid=${AP_SSID_PREFIX}-${mac: -4}/" "$CONF"
+want="${AP_SSID_PREFIX}-${mac: -4}"
+cur=$(nmcli -g 802-11-wireless.ssid connection show OpenAstro-AP 2>/dev/null) || exit 0
+[ "$cur" = "$want" ] && exit 0
+nmcli connection modify OpenAstro-AP 802-11-wireless.ssid "$want"
+# Bounce the hotspot if it already beacons under the placeholder name.
+if nmcli -g GENERAL.STATE connection show OpenAstro-AP 2>/dev/null | grep -q activated; then
+    nmcli connection up OpenAstro-AP >/dev/null 2>&1 || true
+fi
 EOF
-# Bake the configured prefix into the script (it runs without env at boot).
 sed -i "s/\${AP_SSID_PREFIX}/${AP_SSID_PREFIX}/g" /usr/local/sbin/openastro-ap-ssid.sh
 chmod +x /usr/local/sbin/openastro-ap-ssid.sh
 
-# Bring wlan0 up with the static AP address + set SSID, before hostapd.
-cat > /etc/systemd/system/openastro-ap-up.service <<EOF
+cat > /etc/systemd/system/openastro-ap-ssid.service <<EOF
 [Unit]
-Description=OpenAstro AP: wlan0 static IP + SSID-from-MAC
-After=network-pre.target
-Wants=network-pre.target
-Before=hostapd.service
+Description=OpenAstro AP: SSID-from-MAC for the NM hotspot profile
+After=NetworkManager.service
+Wants=NetworkManager.service
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=/usr/local/sbin/openastro-ap-ssid.sh
-ExecStart=/sbin/ip addr replace ${AP_IP}/24 dev wlan0
-ExecStart=/sbin/ip link set wlan0 up
-ExecStartPost=/usr/sbin/iptables-restore /etc/openastro-nat.rules
-ExecStop=/sbin/ip addr flush dev wlan0
 
 [Install]
 WantedBy=multi-user.target
 EOF
+systemctl enable openastro-ap-ssid.service >/dev/null 2>&1
 
-systemctl enable openastro-ap-up.service hostapd dnsmasq >/dev/null 2>&1
-
-log "WiFi AP configured."
+log "WiFi configured (NM hotspot profile OpenAstro-AP)."
 
 # ============================================================
 # System identity (turnkey - no Armbian first-boot wizard)
@@ -281,6 +299,14 @@ echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/opena
 apt-get update -qq
 apt-get install -y -qq alpacabridge >/dev/null
 log "AlpacaBridge $(dpkg-query -W -f '${Version}' alpacabridge) installed."
+# Seed the WiFi regulatory country so the 5 GHz hotspot is allowed out of the
+# box (AlpacaBridge requires a persisted country before 5 GHz AP settings and
+# reads it from its state dir; the user can change it in the web UI).
+install -d /etc/alpacabridge/config
+if [ ! -f /etc/alpacabridge/config/wifi_country ]; then
+    echo "${AP_COUNTRY}" > /etc/alpacabridge/config/wifi_country
+fi
+chown -R alpacabridge:alpacabridge /etc/alpacabridge/config 2>/dev/null || true
 fi
 
-log "OpenAstro OS layer complete (WiFi AP + libgpiod/GPIO + LEDs + eMMC auto-installer + AlpacaBridge)."
+log "OpenAstro OS layer complete (NM WiFi + libgpiod/GPIO + LEDs + eMMC auto-installer + AlpacaBridge)."
