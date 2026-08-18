@@ -69,20 +69,26 @@ Reach it over ethernet (`ssh astro@<ip>`) or by joining the `OpenAstro-…` WiFi
 
 ### Connect to your own network instead (optional)
 
-NetworkManager manages both the wired port and WiFi. The easiest way to join
-an existing WiFi network is the **WiFi** card in the AlpacaBridge web UI
-(Server Info tab); `nmcli` works too:
+Everything is done from the **WiFi** card in the AlpacaBridge web UI (Server
+Info tab): scan for networks, join one with its password, and manage the
+Personal Hotspot - no command line needed.
 
-```bash
-nmcli dev wifi list
-nmcli dev wifi connect "<SSID>" password "<pass>"
-```
+**Hotspot-or-client, never both (iMate limitation).** Unlike OpenAstro boards
+with Broadcom WiFi (e.g. the Orange Pi 4 Pro), the iMate's UWE5622 chip cannot
+run the hotspot and a client connection at the same time. What that means in
+practice:
 
-The iMate has a single WiFi radio with no AP+client concurrency: while it is
-joined to your network the hotspot is down, and NetworkManager falls back to
-the hotspot automatically when your network is out of range (e.g. at a dark
-site). Note the radio also cannot scan while the hotspot is running, so
-network lists are gathered while the hotspot is briefly down.
+- While joined to your home network, the `OpenAstro-XXXX` hotspot is **off**.
+  Reach the device through your network instead: the AlpacaBridge web UI is at
+  `http://openastro.lan:6800/` (or `http://<device-ip>:6800/` - find the
+  address on your router).
+- When your network is out of range - e.g. at a dark site - NetworkManager
+  brings the hotspot back **automatically**; no action needed.
+- To force the hotspot back while your network is in range, toggle
+  **Personal Hotspot** on in the AlpacaBridge WiFi card (this disconnects the
+  device from your network).
+- The radio also cannot scan while the hotspot is running, so network lists
+  are gathered during a brief hotspot interruption.
 
 ## AlpacaBridge
 
