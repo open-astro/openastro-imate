@@ -74,6 +74,22 @@ rm -f /etc/NetworkManager/conf.d/10-openastro-wlan0-unmanaged.conf \
 
 systemctl enable NetworkManager >/dev/null 2>&1 || true
 
+# UWE5622 driver override: the sprdwl_ng module Armbian bundles fails
+# wpa_supplicant AP-mode init on this kernel; ship a known-good build of the
+# maintained out-of-tree uwe5622 tree (commit d6bec75) instead. Prebuilt for
+# exactly this kernel, so hold the kernel packages - an apt kernel upgrade
+# would reintroduce the broken bundled module. (TODO: replace with DKMS.)
+KREL="6.18.33-current-sunxi64"
+MODSRC="$(dirname "$0")/modules/sprdwl_ng-${KREL}.ko"
+MODDST="/lib/modules/${KREL}/kernel/drivers/net/wireless/uwe5622/unisocwifi/sprdwl_ng.ko"
+if [ -f "$MODSRC" ] && [ -d "$(dirname "$MODDST")" ]; then
+    install -m 0644 "$MODSRC" "$MODDST"
+    apt-mark hold linux-image-current-sunxi64 linux-dtb-current-sunxi64 >/dev/null 2>&1 || true
+    log "UWE5622 driver override installed (kernel ${KREL} held)."
+else
+    log "WARNING: UWE5622 driver override not installed (kernel ${KREL} not present?)"
+fi
+
 # Regulatory domain from module load, so the 5 GHz AP can start at boot
 # before any userspace (AlpacaBridge persists later changes itself).
 cat > /etc/modprobe.d/openastro-regdom.conf <<EOF
